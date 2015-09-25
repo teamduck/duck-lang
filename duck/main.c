@@ -35,7 +35,7 @@ const char* ErrorMessage(int error)
 /* main(args) accepts program file to run */
 int main(int argc, char* argv[])
 {
-    const char*   program;
+    const char*   program = "";
     L_TOKEN*      lexing;
     SYNTAX_TREE*  ast;
     char*         buffer;
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
 #ifdef _PROFILING
     // time execution
     struct timespec start, finish;
-    double elapsed;
+    long double elapsed;
 #endif // _PROFILING
 
     // lex source

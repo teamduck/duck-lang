@@ -109,13 +109,13 @@ int ReduceStmtA(SYNTAX_TREE* node)
         SYNTAX_TREE* identifier1 = identifier_list1->children[0];
 
         /* import library */
-        // change scope of [namespace] to global
+        // change scope of [NameSpace] to global
         VALUE library = GetRecord(identifier1->string, gCurrentContext);
         
         if (library.type == VAL_REFERENCE)
         {
-            CONTEXT* namespace = library.data.reference;
-            PAIR* iterator = namespace->list;
+            CLOSURE* NameSpace = library.data.reference;
+            PAIR* iterator = NameSpace->list;
             while (iterator)
             {
                 StoreRecord(iterator->identifier, iterator->value, gGlobalContext);
@@ -279,6 +279,7 @@ int ReduceStmtN(SYNTAX_TREE* node)
     error = InterpretNode(expr1);
 
     returning = 1;
+    continuing = 0;
 
     return error;
 }
@@ -342,9 +343,27 @@ int ReduceAssignmentA(SYNTAX_TREE* node)
 
     if (array_indexing)
     {
-        VALUE previous = HashGet(gLValueIndex, gLValueDictionary);
-        HashStore(gLValueIndex, expr, gLValueDictionary);
-        array_indexing = 0;
+        if (gLValueDictionary)
+        {
+            VALUE previous = HashGet(gLValueIndex, gLValueDictionary);
+            HashStore(gLValueIndex, expr, gLValueDictionary);
+            array_indexing = 0;
+        } else {
+            if (!gLValueStringReference.const_string &&
+                expr.type == VAL_STRING)
+            {
+                int len, index;
+
+                len = strlen(gLValueStringReference.data.string);
+                index = gLValueIndex.data.primitive;
+
+                if (index < len)
+                {
+                    //gLValueStringReference.data.string[index] = expr.data.string[0];
+                }
+            }
+            array_indexing = 0;
+        }
     }
     else
     {
@@ -380,16 +399,34 @@ int ReduceAssignmentB(SYNTAX_TREE* node)
     
     if (array_indexing)
     {
-        VALUE previous = HashGet(gLValueIndex, gLValueDictionary);
-        
-        if (gLValueIndex.type == VAL_STRING &&
-            gLValueIndex.const_string == 0)
+        if (gLValueDictionary)
         {
-            gLValueIndex = CopyString(gLValueIndex);
-        }
+            VALUE previous = HashGet(gLValueIndex, gLValueDictionary);
+        
+            if (gLValueIndex.type == VAL_STRING &&
+                gLValueIndex.const_string == 0)
+            {
+                gLValueIndex = CopyString(gLValueIndex);
+            }
 
-        HashStore(gLValueIndex, expr, gLValueDictionary);
-        array_indexing = 0;
+            HashStore(gLValueIndex, expr, gLValueDictionary);
+            array_indexing = 0;
+        } else {
+            if (!gLValueStringReference.const_string &&
+                expr.type == VAL_STRING)
+            {
+                int len, index;
+
+                len = strlen(gLValueStringReference.data.string);
+                index = gLValueIndex.data.primitive;
+
+                if (index < len)
+                {
+                    //gLValueStringReference.data.string[index] = expr.data.string[0];
+                }
+            }
+            array_indexing = 0;
+        }
     }
     else
     {
@@ -456,6 +493,7 @@ int ReduceFunctionDef(SYNTAX_TREE* node)
         record.data.function->built_in = 0;
         record.data.function->functor = NULL;
         record.data.function->fn_name = identifier1->string;
+        record.data.function->func_data = NULL;
         
         StoreRecord(identifier1->string, record, gCurrentContext);
         GCAddFunction(record.data.function, &gGCManager);
@@ -616,7 +654,8 @@ int ReduceForLoopA(SYNTAX_TREE* node)
                && end.type == VAL_FLOATING_POINT
                && start.data.floatp <= end.data.floatp
                && error == 0
-               && breaking == 0)
+               && breaking == 0
+               && returning == 0)
         {
             StoreRecord(id, start, gCurrentContext);
             error = InterpretNode(stmt_list1);
@@ -634,7 +673,8 @@ int ReduceForLoopA(SYNTAX_TREE* node)
                && end.type == VAL_PRIMITIVE
                && start.data.primitive <= end.data.primitive
                && error == 0
-               && breaking == 0)
+               && breaking == 0
+               && returning == 0)
         {
             StoreRecord(id, start, gCurrentContext);
             error = InterpretNode(stmt_list1);
@@ -695,7 +735,8 @@ int ReduceForLoopB(SYNTAX_TREE* node)
                && end.type == VAL_FLOATING_POINT
                && start.data.floatp <= end.data.floatp
                && error == 0
-               && breaking == 0)
+               && breaking == 0
+               && returning == 0)
         {
             StoreRecord(id, start, gCurrentContext);
             error = InterpretNode(stmt_list1);
@@ -714,7 +755,8 @@ int ReduceForLoopB(SYNTAX_TREE* node)
                && end.type == VAL_PRIMITIVE
                && start.data.primitive <= end.data.primitive
                && error == 0
-               && breaking == 0)
+               && breaking == 0
+               && returning == 0)
         {
             StoreRecord(id, start, gCurrentContext);
             error = InterpretNode(stmt_list1);
@@ -764,10 +806,11 @@ int ReduceWhileLoop(SYNTAX_TREE* node)
     while (gLastExpression.type != VAL_NIL
            && EvaluatesTrue(gLastExpression)
            && error == 0
-           && breaking == 0)
+           && breaking == 0
+           && returning == 0)
     {
         error = InterpretNode(stmt_list1);
-        if (error == 0) {
+        if (error == 0 && returning == 0) {
             error = InterpretNode(condition1);
         }
         continuing = 0;
@@ -1148,6 +1191,15 @@ int ReduceLValueD(SYNTAX_TREE* node)
         gLValueIndex.data.primitive = 0;
         gLValueDictionary = NULL;
         array_indexing = 0;
+    }
+    else if (reference.type == VAL_STRING &&
+             index.type == VAL_PRIMITIVE)
+    {
+        gLValueStringReference = reference;
+        gLValueIndex = index;
+        gLValueDictionary = NULL;
+        gLValueIdentifier = NULL;
+        array_indexing = 1;
     }
     else if (reference.type == VAL_DICTIONARY)
     {
@@ -1719,7 +1771,7 @@ int ReduceFinalC(SYNTAX_TREE* node)
     int error = 0;
 
     gLastExpression.type = VAL_PRIMITIVE;
-    gLastExpression.data.primitive = atoi(integer1->string);
+    gLastExpression.data.primitive = atoll(integer1->string);
 
     return error;
 }
@@ -1777,14 +1829,35 @@ int ReduceFinalG(SYNTAX_TREE* node)
 int ReduceReferenceA(SYNTAX_TREE* node)
 {
     SYNTAX_TREE* l_value1 = node->children[0];
-
+    int len;
     int error = 0;
+    char* str;
+    int index;
     error = InterpretNode(l_value1);
     
     if (array_indexing)
     {
-        gLastExpression = HashGet(gLValueIndex, gLValueDictionary);
-        array_indexing = 0;
+        if (gLValueDictionary)
+        {
+            gLastExpression = HashGet(gLValueIndex, gLValueDictionary);
+            array_indexing = 0;
+        } else {
+            gLastExpression.type = VAL_STRING;
+            len = strlen(gLValueStringReference.data.string);
+            index = gLValueIndex.data.primitive;
+            str = (char*)malloc(sizeof(char) * 2);
+
+            if (index >= 0 && index < len) {
+                str[0] = gLValueStringReference.data.string[index];
+            } else {
+                str[0] = '\0';
+            }
+            str[1] = '\0';
+            gLastExpression.data.string = str;
+
+            GCAddString(str, &gGCManager);
+            array_indexing = 0;
+        }
     }
     else
     {
@@ -1809,11 +1882,11 @@ int ReduceReferenceB(SYNTAX_TREE* node)
 
     if (function.type == VAL_FUNCTION)
     {
-        CONTEXT* func_context;
-        CONTEXT* current;
+        CLOSURE* func_context;
+        CLOSURE* current;
     
         // create new context
-        func_context = (CONTEXT*)ALLOC(sizeof(CONTEXT));
+        func_context = (CLOSURE*)ALLOC(sizeof(CLOSURE));
         func_context->list = NULL;
         func_context->parent = function.data.function->closure;
         
@@ -1827,7 +1900,7 @@ int ReduceReferenceB(SYNTAX_TREE* node)
         
         // call function
         if (function.data.function->built_in) {
-            error = function.data.function->functor(0);
+            error = function.data.function->functor(0, 0l);
         } else {
             error = InterpretNode(function.data.function->body);
         }
@@ -1875,8 +1948,8 @@ int ReduceReferenceC(SYNTAX_TREE* node)
         PAIR* arg;
         PAIR* last;
         PAIR* arg_next;
-        CONTEXT* func_context;
-        CONTEXT* current;        
+        CLOSURE* func_context;
+        CLOSURE* current;        
        
         // evaluate arguments
         error = InterpretNode(arguments1);
@@ -1886,7 +1959,7 @@ int ReduceReferenceC(SYNTAX_TREE* node)
         if (error) return error;
 
         // create new context
-        func_context = (CONTEXT*)ALLOC(sizeof(CONTEXT));
+        func_context = (CLOSURE*)ALLOC(sizeof(CLOSURE));
         func_context->list = NULL;
         func_context->parent = function.data.function->closure;
         current = gCurrentContext;
@@ -1927,7 +2000,7 @@ int ReduceReferenceC(SYNTAX_TREE* node)
         
         // call function
         if (function.data.function->built_in) {
-            error = function.data.function->functor(0);
+            error = function.data.function->functor(0, 0l);
         } else {
             error = InterpretNode(function.data.function->body);
         }
@@ -2125,7 +2198,7 @@ int ReduceArrayInitA(SYNTAX_TREE* node)
     error = InterpretNode(array_init1);
 
     HASH_TABLE* dictionary = gDictionaryInit;
-    int index = gArrayIndex;
+    long int index = gArrayIndex;
     
     error = (error ? error : InterpretNode(expr1));
     VALUE expr = gLastExpression;
@@ -2251,6 +2324,14 @@ int InterpretNode(SYNTAX_TREE* node)
 
     line_error = node->line;
     failed_production = node;
+
+#ifdef _UNITTEST
+    if((++test_inst_count) == TEST_INST_LIMIT)
+    {
+        halting = 1;
+        return -1;
+    }
+#endif
 
     switch (node->production)
     {

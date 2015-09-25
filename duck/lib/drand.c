@@ -42,7 +42,7 @@ const uint64_t XORSHIFT_MAX = 0xffffffffffffffffULL;
 /*Rand.seed((OPTIONAL) seed_num)*/
 /*If no seed given, will seed using current UNIX second.*/
 /*Returns the seed used.*/
-int SeedRand(int arg_count){
+int SeedRand(int arg_count, void* data){
   VALUE argument = GetRecord("seed_number", gCurrentContext);
 
   //TODO: Seeding the XORSHIFT128+ with the built in generator is somewhat questionable.
@@ -67,7 +67,7 @@ int SeedRand(int arg_count){
 
 /*Rand.rand((OPTIONAL) first_bound, (OPTIONAL) second_bound)*/
 /*Returns a random primitive*/
-int GetBoundedRand(int arg_count){
+int GetBoundedRand(int arg_count, void* data){
     VALUE fb_arg = GetRecord("first_bound", gCurrentContext);
     VALUE sb_arg = GetRecord("second_bound", gCurrentContext);
 
@@ -101,17 +101,17 @@ int GetBoundedRand(int arg_count){
 
 /*Rand.randfloat(first_bound, second_bound)*/
 /*Returns a random float.*/
-int GetBoundedRandFloat(int arg_count){
+int GetBoundedRandFloat(int arg_count, void* data){
     VALUE fb_arg = GetRecord("first_bound", gCurrentContext);
     VALUE sb_arg = GetRecord("second_bound", gCurrentContext);
 
-    double num = 0;
-    double lower_bound = TypeFloat(fb_arg);
-    double upper_bound = TypeFloat(sb_arg);
+    long double num = 0;
+    long double lower_bound = TypeFloat(fb_arg);
+    long double upper_bound = TypeFloat(sb_arg);
 
     //Swap if user has misordered bounds.
     if(upper_bound < lower_bound){
-      double tmp = lower_bound;
+      long double tmp = lower_bound;
       lower_bound = upper_bound;
       upper_bound = tmp;
     }

@@ -8,6 +8,7 @@
 #include "arithmetic.h"
 #include "memory.h"
 #include "garbage.h"
+#include "lib/stdduck.h"
 
 /* truth */
 int EvaluatesTrue(VALUE value)
@@ -48,24 +49,37 @@ VALUE Concat(VALUE a, VALUE b)
     char* string_b = NULL;
     char buffer1[32];
     char buffer2[32];
+    int length;
+    char* new_string;
+    char* temp1 = NULL;
+    char* temp2 = NULL;
 
     // coerce string for first term
     if (a.type == VAL_STRING) {
         string_a = (char*)a.data.string;
     } else {
         if (a.type == VAL_PRIMITIVE) {
-            sprintf(buffer1, "%i", a.data.primitive);
+//#ifdef WIN32
+//            sprintf(buffer1, "%l64i", a.data.primitive);
+//#else
+            sprintf(buffer1, "%lli", a.data.primitive);
+//#endif
             string_a = buffer1;
         } else if (a.type == VAL_FLOATING_POINT) {
-            sprintf(buffer1, "%.16g", a.data.floatp);
+if (_SUPPORTS_80BIT_FLOATING_POINT) {
+            sprintf(buffer1, "%.18Lg", a.data.floatp);
+} else {
+            sprintf(buffer1, "%.16Lg", a.data.floatp);
+}
             string_a = buffer1;
         }
         // VAL_REFERENCE
         // VAL_FUNCTION
         // VAL_DICTIONARY
         else {
-            sprintf(buffer1, "null");
-            string_a = buffer1;
+            //sprintf(buffer1, "null");
+            temp1 = ToString(a);
+            string_a = temp1;
         }
     }
 
@@ -74,24 +88,33 @@ VALUE Concat(VALUE a, VALUE b)
         string_b = (char*)b.data.string;
     } else {
         if (b.type == VAL_PRIMITIVE) {
-            sprintf(buffer2, "%i", b.data.primitive);
+//#ifdef WIN32
+//            sprintf(buffer2, "%l64i", b.data.primitive);
+//#else
+            sprintf(buffer2, "%lli", b.data.primitive);
+//#endif
             string_b = buffer2;
         } else if (b.type == VAL_FLOATING_POINT) {
-            sprintf(buffer2, "%.16g", b.data.floatp);
+if (_SUPPORTS_80BIT_FLOATING_POINT) {
+            sprintf(buffer2, "%.18Lg", b.data.floatp);
+} else {
+            sprintf(buffer2, "%.16Lg", b.data.floatp);
+}
             string_b = buffer2;
         }
         // VAL_REFERENCE
         // VAL_FUNCTION
         // VAL_DICTIONARY
         else {
-            sprintf(buffer2, "null");
-            string_b = buffer2;
+            //sprintf(buffer2, "null");
+            temp2 = ToString(b);
+            string_b = temp2;
         }
     }
 
     // concat strings
-    int length = strlen(string_a) + strlen(string_b) + 1;
-    char* new_string = (char*)ALLOC(sizeof(char) * length);
+    length = strlen(string_a) + strlen(string_b) + 1;
+    new_string = (char*)ALLOC(sizeof(char) * length);
 
     GCAddString(new_string, &gGCManager);
 
@@ -100,6 +123,9 @@ VALUE Concat(VALUE a, VALUE b)
     value.type = VAL_STRING;
     value.data.string = new_string;
     value.const_string = 0;
+
+    if (temp1) { free(temp1); }
+    if (temp2) { free(temp2); }
 
     return value;
 }
@@ -183,7 +209,7 @@ VALUE Divide(VALUE a, VALUE b)
     if (a.type == VAL_FLOATING_POINT ||
         b.type == VAL_FLOATING_POINT)
     {
-        double divisor = TypeFloat(b);
+        long double divisor = TypeFloat(b);
     
         result.type = VAL_FLOATING_POINT;
         if (divisor != 0.0) {
@@ -196,7 +222,7 @@ VALUE Divide(VALUE a, VALUE b)
     else if (a.type == VAL_PRIMITIVE ||
              b.type == VAL_PRIMITIVE)
     {
-        int divisor = TypeInt(b);
+        int64 divisor = TypeInt(b);
 
         result.type = VAL_PRIMITIVE;
         if (divisor != 0) {
@@ -214,10 +240,11 @@ VALUE Divide(VALUE a, VALUE b)
 VALUE Modulus(VALUE a, VALUE b)
 {
     VALUE result;
+    int64 base;
     result.type = VAL_NIL;
     result.data.primitive = 0;
 
-    int base = TypeInt(b);
+    base = TypeInt(b);
 
     if (base != 0) {
         result.type = VAL_PRIMITIVE;
@@ -235,7 +262,7 @@ VALUE CompareEquality(VALUE a, VALUE b)
     if ((a.type == VAL_FLOATING_POINT && b.type == VAL_PRIMITIVE) ||
         (a.type == VAL_PRIMITIVE && b.type == VAL_FLOATING_POINT))
     {
-        double a_val, b_val;
+        long double a_val, b_val;
         a_val = TypeFloat(a);
         b_val = TypeFloat(b);
         a.type = b.type = 
@@ -376,8 +403,8 @@ VALUE CompareLessThan(VALUE a, VALUE b)
     }
     else if (a.type == VAL_FLOATING_POINT || b.type == VAL_FLOATING_POINT)
     {
-        double afloat = TypeFloat(a);
-        double bfloat = TypeFloat(b);
+        long double afloat = TypeFloat(a);
+        long double bfloat = TypeFloat(b);
         result.type = VAL_PRIMITIVE;
         result.data.primitive = (afloat < bfloat);
     }
@@ -410,8 +437,8 @@ VALUE CompareGreaterThan(VALUE a, VALUE b)
     }
     else if (a.type == VAL_FLOATING_POINT || b.type == VAL_FLOATING_POINT)
     {
-        double afloat = TypeFloat(a);
-        double bfloat = TypeFloat(b);
+        long double afloat = TypeFloat(a);
+        long double bfloat = TypeFloat(b);
         result.type = VAL_PRIMITIVE;
         result.data.primitive = (afloat > bfloat);
     }
@@ -444,8 +471,8 @@ VALUE CompareLessThanOrEqual(VALUE a, VALUE b)
     }
     else if (a.type == VAL_FLOATING_POINT || b.type == VAL_FLOATING_POINT)
     {
-        double afloat = TypeFloat(a);
-        double bfloat = TypeFloat(b);
+        long double afloat = TypeFloat(a);
+        long double bfloat = TypeFloat(b);
         result.type = VAL_PRIMITIVE;
         result.data.primitive = (afloat <= bfloat);
     }
@@ -477,8 +504,8 @@ VALUE CompareGreaterThanOrEqual(VALUE a, VALUE b)
     }
     else if (a.type == VAL_FLOATING_POINT || b.type == VAL_FLOATING_POINT)
     {
-        double afloat = TypeFloat(a);
-        double bfloat = TypeFloat(b);
+        long double afloat = TypeFloat(a);
+        long double bfloat = TypeFloat(b);
         result.type = VAL_PRIMITIVE;
         result.data.primitive = (afloat >= bfloat);
     }

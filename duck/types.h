@@ -4,8 +4,7 @@
 #include "lr_parser.h"
 
 #ifdef WIN32
-#define CONTEXT     FCONTEXT
-#define namespace   NAMESPACE
+#define atoll       _atoi64
 #endif
 
 /* constants */
@@ -20,9 +19,12 @@
 /* floating-point precision */
 #define  DOUBLE_EPSILON     (1.0E-12)
 
+/* long long int */
+typedef long long int int64;
+
 /* types */
 
-struct CONTEXT;
+struct CLOSURE;
 struct PAIR;
 
 typedef struct FUNCTION
@@ -30,10 +32,11 @@ typedef struct FUNCTION
     struct PAIR* parameters;
     SYNTAX_TREE* body;
     unsigned int built_in;
-    int (*functor)(int);
-    struct CONTEXT* closure;
+    int (*functor)(int, void*);
+    struct CLOSURE* closure;
     int ref_count;
     const char* fn_name;
+    void* func_data;
 } FUNCTION;
 
 struct HASH_TABLE;
@@ -42,11 +45,11 @@ typedef struct VALUE
     int         type;
     union 
     {
-        int             primitive;
-        double          floatp;
+        int64           primitive;
+        long double     floatp;
         const char*     string;
         FUNCTION*       function;
-        struct CONTEXT* reference;
+        struct CLOSURE* reference;
         struct HASH_TABLE* 
                         dictionary;
     } data;
@@ -60,12 +63,12 @@ typedef struct PAIR
     struct PAIR* next;
 } PAIR;
 
-typedef struct CONTEXT
+typedef struct CLOSURE
 {
     PAIR*       list;
     int         ref_count;
-    struct CONTEXT* parent;
-} CONTEXT;
+    struct CLOSURE* parent;
+} CLOSURE;
 
 typedef struct CALLSTACK
 {
@@ -76,8 +79,8 @@ typedef struct CALLSTACK
 
 /* casts */
 
-double TypeFloat(VALUE value);
-int    TypeInt(VALUE value);
+long double TypeFloat(VALUE value);
+int64  TypeInt(VALUE value);
 int    IsDynamic(VALUE type);
 VALUE  CopyString(VALUE string);
 

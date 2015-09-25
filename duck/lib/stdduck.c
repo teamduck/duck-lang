@@ -5,30 +5,52 @@
 #include "memory.h"
 #include "garbage.h"
 #include <time.h>
+#include <string.h>
 
 #ifdef WIN32
-#undef CONTEXT
+#undef CLOSURE
 #define WIN32_LEAN_AND_MEAN
 #include "Windows.h"
-#define CONTEXT        FCONTEXT
 #endif
 
 HASH_TABLE* duck_print_records = NULL;
 
 unsigned int start_t = 0;
 
+/* to string function declarations */
+void PrintString(char** dest, unsigned int* size, const char* text);
+void PrintValueString(char** dest, unsigned int* size, VALUE value);
+void PrintFunctionString(char** dest, unsigned int* size, FUNCTION* function);
+void PrintObjectString(char** dest, unsigned int* size, CLOSURE* context);
+void PrintDictionaryString(char** string, unsigned int* size, HASH_TABLE* dictionary);
+
+
 /* printing functions */
 void PrintValue(VALUE value)
 {
     switch (value.type)
     {
-        case VAL_PRIMITIVE: printf("%i", value.data.primitive); break;
-        case VAL_FLOATING_POINT: printf("%.16g", value.data.floatp); break;
+        case VAL_PRIMITIVE: 
+//#ifdef WIN32
+//            printf("%l64i", value.data.primitive); 
+//#else
+            printf("%lli", value.data.primitive); 
+//#endif
+            break;
+        case VAL_FLOATING_POINT: 
+            if (_SUPPORTS_80BIT_FLOATING_POINT)
+            {
+                printf("%.18Lg", value.data.floatp);
+                break;
+            } else {
+                printf("%.16Lg", value.data.floatp); 
+                break;
+            }
         case VAL_STRING: printf("%s", value.data.string); break;
         case VAL_REFERENCE: PrintObject(value.data.reference); break;
         case VAL_FUNCTION: PrintFunction(value.data.function); break;
         case VAL_DICTIONARY: PrintDictionary(value.data.dictionary); break;
-        default:
+    default:
         case VAL_NIL: printf("[NIL]"); break;
     }
 }
@@ -53,7 +75,7 @@ void PrintFunction(FUNCTION* function)
     }
 }
 
-void PrintObject(CONTEXT* context)
+void PrintObject(CLOSURE* context)
 {
     VALUE key;
 
@@ -119,44 +141,169 @@ void PrintDictionary(HASH_TABLE* dictionary)
     printf("]");
 }
 
-/* TODO: Implement or come up with another scheme to manage strings. */
-void ReallocStringsRef(CONTEXT* context) { return; }
-void ReallocStringsFunc(FUNCTION* func) { return; }
-void ReallocStringsDict(HASH_TABLE* table) { return; }
 
-/* sanitize strings */
-VALUE ReallocStrings(VALUE value)
+/* ToString functions */
+
+void PrintString(char** dest, unsigned int* size, const char* text)
 {
-    int   size;
-    char* copy;
-    switch (value.type)
+    unsigned int necessary_space;
+    unsigned int len;
+
+    len = strlen(*dest);
+    necessary_space = len + strlen(text) + 1;
+    if (necessary_space > *size)
     {
-        case VAL_STRING:
-            size = strlen(value.data.string);
-            copy = (char*)ALLOCATE(sizeof(char) * (size+1));
-            sprintf(copy, "%s", value.data.string);
-            value.data.string = copy;
-            return value;
-        case VAL_REFERENCE: 
-            ReallocStringsRef(value.data.reference);
-            return value;
-        case VAL_FUNCTION: 
-            ReallocStringsFunc(value.data.function);
-            return value;
-        case VAL_DICTIONARY: 
-            ReallocStringsDict(value.data.dictionary);
-            return value;
-        case VAL_PRIMITIVE:
-        case VAL_FLOATING_POINT:
-        case VAL_NIL: 
-        default:
-            break;
+        *size = *size * 2;
+        *dest = (char*)realloc(*dest, *size);
     }
-    return value;
+
+    sprintf(*dest + len, "%s", text);
 }
 
+void PrintValueString(char** dest, unsigned int* size, VALUE value)
+{
+    char buffer[128];
+    switch (value.type)
+    {
+    case VAL_PRIMITIVE: 
+        //#ifdef WIN32
+        //            printf("%l64i", value.data.primitive); 
+        //#else
+        sprintf(buffer, "%lli", value.data.primitive); 
+        PrintString(dest, size, buffer);
+        //#endif
+        break;
+    case VAL_FLOATING_POINT: 
+        if (_SUPPORTS_80BIT_FLOATING_POINT)
+        {
+            sprintf(buffer, "%.18Lg", value.data.floatp);
+            break;
+        } else {
+            sprintf(buffer, "%.16Lg", value.data.floatp); 
+            break;
+        }
+    case VAL_STRING: PrintString(dest, size, value.data.string); break;
+    case VAL_REFERENCE: PrintObjectString(dest, size, value.data.reference); break;
+    case VAL_FUNCTION: PrintFunctionString(dest, size, value.data.function); break;
+    case VAL_DICTIONARY: PrintDictionaryString(dest, size, value.data.dictionary); break;
+    default:
+    case VAL_NIL: printf("[NIL]"); break;
+    }
+}
+
+void PrintFunctionString(char** dest, unsigned int* size, FUNCTION* function)
+{
+    if (function) {
+        if (function->fn_name) {
+            PrintString(dest, size, function->fn_name);
+            PrintString(dest, size, "(");
+        } else {
+            PrintString(dest, size, "function(");
+        }
+        PAIR* itr = function->parameters;
+        while (itr)
+        {
+            PrintString(dest, size, itr->identifier);
+            if (itr->next) {
+                PrintString(dest, size, ", ");
+            }
+            itr = itr->next;
+        }
+        PrintString(dest, size, ")");
+    }
+}
+
+void PrintObjectString(char** dest, unsigned int* size, CLOSURE* context)
+{
+    VALUE key;
+
+    key.type = VAL_REFERENCE;
+    key.data.reference = context;
+
+    // check for recursion
+    if (HashGet(key, duck_print_records).type != VAL_NIL) {
+        PrintString(dest, size, "...");
+        return;
+    } else {
+        VALUE value;
+        value.type = VAL_PRIMITIVE;
+        value.data.primitive = 1;
+        HashStore(key, value, duck_print_records);
+    }
+
+    PrintString(dest, size, "[");
+    PAIR* list = context->list;
+    while (list)
+    {
+        PrintValueString(dest, size, list->value);
+
+        if (list->next) {
+            PrintString(dest, size, ", ");
+        }
+        list = list->next;
+    }
+    PrintString(dest, size, "]");
+}
+
+
+void PrintDictionaryString(char** string, unsigned int* size, HASH_TABLE* dictionary)
+{
+    VALUE key;
+    unsigned int i, dictionary_size;
+    dictionary_size = dictionary->size;
+    key.type = VAL_DICTIONARY;
+    key.data.dictionary = dictionary;
+
+    // check for recursion
+    if (HashGet(key, duck_print_records).type != VAL_NIL) {
+        PrintString(string, size, "...");
+        return;
+    } else {
+        VALUE value;
+        value.type = VAL_PRIMITIVE;
+        value.data.primitive = 1;
+        HashStore(key, value, duck_print_records);
+    }
+
+    PrintString(string, size, "[");
+    for (i = 0; i < dictionary->capacity; i++)
+    {
+        if (dictionary->table[i].key.type != VAL_NIL)
+        {
+            dictionary_size--;
+            PrintValueString(string, size, dictionary->table[i].key);
+            PrintString(string, size, ": ");
+            PrintValueString(string, size, dictionary->table[i].value);
+            if (dictionary_size) { PrintString(string, size, ", "); }
+        }
+    }
+    PrintString(string, size, "]");
+}
+
+
+char* ToString(VALUE value)
+{
+    char* string;
+    unsigned int size;
+
+    duck_print_records = CreateHashTable();
+
+    size = 512;
+    string = (char*)malloc(size * sizeof(char));
+    sprintf(string, "");
+
+     PrintValueString(&string, &size, value);
+
+    FreeHashTable(duck_print_records);
+    duck_print_records = NULL;
+
+    return string;
+}
+
+
+
 /* parses(source) -> boolean */
-int DuckParses(int argument_count)
+int DuckParses(int argument_count, void* data)
 {
     L_TOKEN*      lexing;
     char*         buffer;
@@ -191,7 +338,7 @@ int DuckParses(int argument_count)
 }
 
 /* eval(source) */
-int DuckEval(int argument_count)
+int DuckEval(int argument_count, void* data)
 {
     L_TOKEN*      lexing;
     SYNTAX_TREE*  ast;
@@ -203,7 +350,7 @@ int DuckEval(int argument_count)
     gLastExpression.type = VAL_NIL;
     gLastExpression.data.primitive = 0;
 
-    CONTEXT* currentContext;
+    CLOSURE* currentContext;
     currentContext = gCurrentContext;
 
     int prev_line_error = line_error;
@@ -260,7 +407,7 @@ int DuckEval(int argument_count)
 }
 
 /* duck.print(output) */
-int DuckPrint(int argument_count)
+int DuckPrint(int argument_count, void* data)
 {
     int error = 0;
     VALUE argument = GetRecord("output", gCurrentContext);
@@ -279,7 +426,7 @@ int DuckPrint(int argument_count)
 }
 
 /* duck.println(output) */
-int DuckPrintLn(int argument_count)
+int DuckPrintLn(int argument_count, void* data)
 {
     int error = 0;
     VALUE argument = GetRecord("output", gCurrentContext);
@@ -299,7 +446,7 @@ int DuckPrintLn(int argument_count)
 }
 
 /* duck.prompt(message) */
-int DuckPrompt(int argument_count)
+int DuckPrompt(int argument_count, void* data)
 {
     int error = 0;
 
@@ -339,7 +486,7 @@ int DuckPrompt(int argument_count)
 }
 
 /* Type(object) */
-int DuckType(int argument_count)
+int DuckType(int argument_count, void* data)
 {
     int error = 0;
 
@@ -362,7 +509,7 @@ int DuckType(int argument_count)
 }
 
 /* int(value) */
-int DuckInt(int argument_count)
+int DuckInt(int argument_count, void* data)
 {
     int error = 0;
 
@@ -375,7 +522,7 @@ int DuckInt(int argument_count)
 }
 
 /* float(value) */
-int DuckFloat(int argument_count)
+int DuckFloat(int argument_count, void* data)
 {
     int error = 0;
 
@@ -388,7 +535,7 @@ int DuckFloat(int argument_count)
 }
 
 /* len(array) */
-int DuckLength(int argument_count)
+int DuckLength(int argument_count, void* data)
 {
     int error = 0;
 
@@ -396,8 +543,8 @@ int DuckLength(int argument_count)
 
     if (argument.type == VAL_REFERENCE)
     {
-        int count = 0;
-        CONTEXT* reference;
+        long int count = 0;
+        CLOSURE* reference;
         PAIR* iterator;
 
         reference = argument.data.reference;
@@ -416,6 +563,11 @@ int DuckLength(int argument_count)
         gLastExpression.type = VAL_PRIMITIVE;
         gLastExpression.data.primitive = argument.data.dictionary->size;
     }
+    else if (argument.type == VAL_STRING)
+    {
+        gLastExpression.type = VAL_PRIMITIVE;
+        gLastExpression.data.primitive = strlen(gLastExpression.data.string);
+    }
     else 
     {
         if (argument.type != VAL_NIL) {
@@ -431,7 +583,7 @@ int DuckLength(int argument_count)
 }
 
 /* quit() */
-int DuckQuit(int argument_count)
+int DuckQuit(int argument_count, void* data)
 {
     int error = 0;
 
@@ -444,13 +596,13 @@ int DuckQuit(int argument_count)
 }
 
 /* float time() */
-int DuckTime(int argument_count)
+int DuckTime(int argument_count, void* data)
 {
     int error = 0;
 
 #ifndef WIN32
     struct timespec ctime;
-    double time;
+    long double time;
 
     clock_gettime(CLOCK_MONOTONIC, &ctime);
     time = ctime.tv_sec + ctime.tv_nsec / 1000000000.0;
@@ -459,7 +611,7 @@ int DuckTime(int argument_count)
     gLastExpression.data.floatp = time;
 #else
     unsigned int cur_t;
-    double time;
+    long double time;
 
     cur_t = GetTickCount();
     time = (cur_t - start_t) / 1000.0;
@@ -530,7 +682,7 @@ void BindStandardLibrary()
 #endif
 }
 
-int StringSplit(int argument_count)
+int StringSplit(int argument_count, void* data)
 {
     int error = 0;
 
